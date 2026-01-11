@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import io
+import re
 import zipfile
 from datetime import datetime
 from itertools import tee
@@ -252,8 +253,39 @@ class RemoteZip(zipfile.ZipFile):
         return self.fp._file_size if self.fp else 0
 
 
-def _list_files(url, support_suffix_range, filenames):
-    with RemoteZip(url, headers={'User-Agent': 'remotezip'}, support_suffix_range=support_suffix_range) as zip:
+_header_re = re.compile(r'\A\s*([^\s:]+)\s*:\s?(.*?)\Z')
+
+
+def _build_headers(headers):
+    """
+    Build requests-compatible headers dict from command line argument values.
+    """
+    # Combine multiple headers with the same name into a
+    # comma-separated single value. This is equivalent in HTTP
+    # (according to RFC 9110 section 5.2), and requests wants the
+    # headers in a dict.
+    headers_dict = requests.utils.CaseInsensitiveDict()
+    for header in headers:
+        m = _header_re.match(header)
+        if not m:
+            raise ValueError(f'Invalid HTTP request header: {header!r}')
+        if m[1] in headers_dict:
+            headers_dict[m[1]] += f', {m[2]}'
+        else:
+            headers_dict[m[1]] = m[2]
+
+    if 'user-agent' not in headers_dict:
+        headers_dict['User-Agent'] = 'remotezip'
+
+    return headers_dict
+
+
+def _list_files(url, support_suffix_range, filenames, headers):
+    with RemoteZip(
+            url,
+            headers=_build_headers(headers),
+            support_suffix_range=support_suffix_range,
+    ) as zip:
         if len(filenames) == 0:
             filenames = zip.namelist()
         data = []
@@ -279,8 +311,12 @@ def _printTable(data, header, align):
     print()
 
 
-def _extract_files(url, support_suffix_range, filenames, path):
-    with RemoteZip(url, support_suffix_range=support_suffix_range) as zip:
+def _extract_files(url, support_suffix_range, filenames, path, headers):
+    with RemoteZip(
+            url,
+            headers=_build_headers(headers),
+            support_suffix_range=support_suffix_range,
+    ) as zip:
         if len(filenames) == 0:
             filenames = zip.namelist()
         for fname in filenames:
@@ -298,13 +334,16 @@ def main():
     parser.add_argument('-l', '--list', action='store_true', help='List files in the archive')
     parser.add_argument('-d', '--dir', default=os.getcwd(), help='Extract directory, default current directory')
     parser.add_argument('--disable-suffix-range-support', action='store_true', help='Use when remote server does not support suffix range (negative offset)')
+    parser.add_argument('-H', '--header', action='append', default=[], metavar='NAME:VALUE', help='HTTP request header')
 
     args = parser.parse_args()
     support_suffix_range = not args.disable_suffix_range_support
     if args.list:
-        _list_files(args.url, support_suffix_range, args.filename)
+        _list_files(args.url, support_suffix_range, args.filename, args.header)
     else:
-        _extract_files(args.url, support_suffix_range, args.filename, args.dir)
+        _extract_files(
+            args.url, support_suffix_range, args.filename, args.dir,
+            args.header)
 
 
 if __name__ == "__main__":
