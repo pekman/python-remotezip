@@ -280,11 +280,12 @@ def _build_headers(headers):
     return headers_dict
 
 
-def _list_files(url, support_suffix_range, filenames, headers):
+def _list_files(url, support_suffix_range, filenames, headers, verify_cert):
     with RemoteZip(
             url,
-            headers=_build_headers(headers),
             support_suffix_range=support_suffix_range,
+            headers=_build_headers(headers),
+            verify=verify_cert,
     ) as zip:
         if len(filenames) == 0:
             filenames = zip.namelist()
@@ -311,11 +312,14 @@ def _printTable(data, header, align):
     print()
 
 
-def _extract_files(url, support_suffix_range, filenames, path, headers):
+def _extract_files(
+        url, support_suffix_range, filenames, path, headers, verify_cert,
+):
     with RemoteZip(
             url,
-            headers=_build_headers(headers),
             support_suffix_range=support_suffix_range,
+            headers=_build_headers(headers),
+            verify=verify_cert,
     ) as zip:
         if len(filenames) == 0:
             filenames = zip.namelist()
@@ -335,15 +339,18 @@ def main():
     parser.add_argument('-d', '--dir', default=os.getcwd(), help='Extract directory, default current directory')
     parser.add_argument('--disable-suffix-range-support', action='store_true', help='Use when remote server does not support suffix range (negative offset)')
     parser.add_argument('-H', '--header', action='append', default=[], metavar='NAME:VALUE', help='HTTP request header')
+    parser.add_argument('--insecure', action='store_true', help="Don't check TLS certificate")
 
     args = parser.parse_args()
     support_suffix_range = not args.disable_suffix_range_support
     if args.list:
-        _list_files(args.url, support_suffix_range, args.filename, args.header)
+        _list_files(
+            args.url, support_suffix_range, args.filename,
+            args.header, not args.insecure)
     else:
         _extract_files(
             args.url, support_suffix_range, args.filename, args.dir,
-            args.header)
+            args.header, not args.insecure)
 
 
 if __name__ == "__main__":
